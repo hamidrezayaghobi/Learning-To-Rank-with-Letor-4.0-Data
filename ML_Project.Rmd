@@ -1,0 +1,581 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.2.4
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+Hamidreza Yaghoubi Araghi 98109786
+
+Alireza Heidari 98109731
+
+Ali Mehrabani 98109753
+
+Mohammad Khodadadi 98106434
+
+
+# Initialize
+
+
+## Import
+
+```{python}
+import os
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import pandas as pd
+import numpy as np
+import seaborn as sns
+from bioinfokit.visuz import cluster
+import warnings
+
+from imblearn.over_sampling import SMOTE
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import SGDRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from pyspark.sql import SparkSession, Row, functions as F 
+```
+
+## Config
+
+```{python}
+SAMPLE_FILE_NUMBER = [1, 2, 3]
+DATA_PATH_FROMAT = './MQ2007/S{}.txt'
+DATA_PATHS = [DATA_PATH_FROMAT.format(number) for number in SAMPLE_FILE_NUMBER]
+
+TEST_SIZE = 0.20
+FEATURE_COUNT = 46
+warnings.filterwarnings('ignore')
+
+RADNOM_STATE = 42
+```
+
+## Spark
+
+```{python}
+SPARK_THREADS = 12
+SPARK_MEMORY = 8
+CHECKPOINT_DIR = os.path.expanduser('~/tmp/spark_checkpoint') 
+```
+
+```{python}
+spark = (
+    SparkSession 
+    .builder 
+    .master("local[{}]".format(SPARK_THREADS)) 
+    .config("spark.driver.memory", "{}g".format(SPARK_MEMORY),)
+    .config('spark.sql.session.timeZone', 'Asia/Tehran')
+    .getOrCreate()
+)
+
+sc = spark.sparkContext
+sc.setCheckpointDir(CHECKPOINT_DIR)
+```
+
+## Plot
+
+```{python}
+FIGSIZE = (13, 9)
+```
+
+## Ohter
+
+```{python}
+def summery(pdf):
+    display(pdf.head(5))
+```
+
+# Data Preparation
+
+
+## Load Data
+
+```{python}
+def load_raw_data_pdf(data_paths):
+    train_data_pdf = []
+    for path in data_paths:
+        train_data_pdf.append(pd.read_csv(path, sep=" ", header=None))
+    return pd.concat(train_data_pdf).reset_index(drop=True)
+
+raw_data_pdf = load_raw_data_pdf(DATA_PATHS)
+summery(raw_data_pdf)
+```
+
+## Data Cleaning
+
+```{python}
+def remove_unsued_info(pdf):
+    return pdf.iloc[: , :-9]
+
+def remove_column_name_from_data(pdf):
+    for i in range(1, 48):
+        pdf[['temp', i]] = pdf[i].str.split(':', expand=True)
+    pdf = pdf.drop('temp', axis=1)
+    return pdf
+    
+def rename_lable_and_id(pdf):
+    pdf = pdf.rename(columns = {1:'qid', 0:'label'})
+    for i in range(2, 48):
+        pdf = pdf.rename(columns = {i:i-1})
+        
+    return pdf
+
+data_pdf = remove_unsued_info(raw_data_pdf)
+data_pdf = remove_column_name_from_data(data_pdf)
+data_pdf = rename_lable_and_id(data_pdf)
+summery(data_pdf)
+```
+
+## Split X and Y
+
+```{python}
+x_pdf = data_pdf.drop('label', axis=1)
+y_pdf = data_pdf[['qid', 'label']]
+summery(x_pdf)
+```
+
+# EDA
+
+
+In this section, first we visualize features using t-SNE then we want to see if using the PCA algorithm is good to reduce the number of features for the training process. As usual and comen, we first normalized data and then used the PCA algorithm on the normalized data.
+
+
+## Normalize Data
+
+```{python}
+sc = StandardScaler()
+norm_data_pdf = sc.fit_transform(x_pdf.drop('qid', axis=1))
+```
+
+## t-SNE
+
+```{python}
+tsne_em = TSNE(n_components=2, perplexity=30.0, n_iter=300, init='pca').fit_transform(norm_data_pdf)
+color_class = y_pdf['label'].to_numpy()
+cluster.tsneplot(score=tsne_em, colorlist=color_class, colordot=('tab:blue', '#63a375', 'tab:red'), 
+    legendpos='upper right', legendanchor=(1.15, 1) )
+
+fig, ax = plt.subplots(figsize=FIGSIZE)
+image = mpimg.imread('./tsne_2d.png')
+plt.imshow(image)
+plt.axis('off') 
+plt.show()
+```
+
+## Effectivenes of PCA
+
+```{python}
+number_of_feature = []
+responsible_variance = []
+for i in range(1, len(norm_data_pdf[0]) + 1):
+    pca = PCA(n_components=i)
+    X_train = pca.fit_transform(norm_data_pdf)
+    explained_variance = pca.explained_variance_ratio_
+    responsible_variance.append(round(sum(explained_variance), 3))
+    number_of_feature.append(i)
+    
+fig, ax = plt.subplots(figsize=FIGSIZE)
+plt.plot(number_of_feature, responsible_variance)
+plt.title('PCA- total responsible variance vs.  number of feature ')
+plt.ylabel('responsible variance')
+plt.xlabel('number of feature')
+plt.show()
+```
+
+<font color='Red'>
+    <div style=style="font-size: 25px"> 
+        Result
+    </div>
+</font>
+
+
+As you can see above, we can use 30 features with a nearly total responsible variance of 1 instead of all 46 features. This reduction of features and the known fact that Normalization and PCA will help us to avoid sparsity problems in classification, will lead us to use the Normalization and PCA algorithm. 
+
+As a result, <font color='Green'> we will use the PCA algorithm with n_components=30 </font>.
+
+
+## Impcat of PCA on Sparsity
+
+
+As the most of features suffer from sparsity, reducing unnecessary features will have a huge impact to overcome sparsity as far as we can. In this section, we show that Normalization and PCA will help reduce the sparsity of data.
+
+```{python}
+def calculate_sparsity(pdf, feature_count):
+    coutn_of_all_data = len(pdf) * feature_count
+    count_of_zero_data = 0
+    for column in pdf.columns:
+        count_of_zero_data += len(pdf[pdf[column] == '0.000000'][column])
+    return round(count_of_zero_data / coutn_of_all_data, 2)
+```
+
+```{python}
+pca = PCA(n_components=30)
+redeuced_norm_data_pdf = pca.fit_transform(norm_data_pdf)
+redeuced_norm_data_pdf = pd.DataFrame(redeuced_norm_data_pdf)
+```
+
+```{python}
+print(f"Precent of zero data befor Normalization and PCA = {calculate_sparsity(x_pdf, 46)}")
+print(f"Precent of zero data after Normalization and PCA = {calculate_sparsity(redeuced_norm_data_pdf, 30)}")
+```
+
+<font color='Red'>
+    <div style=style="font-size: 25px"> 
+        Result
+    </div>
+</font>
+
+
+As is clear, Normalization and PCA help us to overcome the sparsity problem.
+
+As a result, <font color='Green'> we will use Normalization and PCA algorithms.</font>.
+
+
+## Class-Imbalance
+
+
+In this section, we will investigate if we have class imbalance problem or not.
+
+
+### Proof of Existence
+
+```{python}
+def draw_hsitogram(data, title, figsize=FIGSIZE, shrink=0.6, discrete=True):
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.histplot(x=data, shrink=shrink, discrete=discrete)
+    plt.title(title)
+    plt.show()
+```
+
+```{python}
+draw_hsitogram(y_pdf['label'], 'conut of sample for each label')
+```
+
+### Effectivness of OverSampleing 
+
+```{python}
+smote = SMOTE()
+
+x_smote, y_smote = smote.fit_resample(x_pdf.drop('qid', axis=1), y_pdf.drop('qid', axis=1))
+draw_hsitogram(y_smote['label'], 'conut of sample for each label-after over-sampling')
+```
+
+<font color='Red'>
+    <div style=style="font-size: 25px"> 
+        Result
+    </div>
+</font>
+
+
+As you can see in the first histogram, most of the data labels are 0, and far fewer are 2. This will cause class imbalance. For this reason, we use oversampling to overcome the class imbalance problem.
+
+As a result, <font color='Green'>we use over-sampling to overcome the class imbalance problem.</font>
+
+
+## EDA Result
+
+
+As we saw, we can use normalization and PCA algorithm for both part one and part two. In the first part, we suffer from class imbalance so, we will use oversampling to overcome this issue.
+
+
+# Data Pre-Process
+
+
+## Pre-Process Config
+
+```{python}
+N_COMPONENTS = 30
+```
+
+## Normalization
+
+```{python}
+def get_normalized_data(pdf):
+    sc = StandardScaler()
+    qid = pdf[['qid']]
+    label = pdf[['label']]
+    pdf = pdf.drop(['qid', 'label'], axis = 1)
+    pdf = pca.fit_transform(pdf)
+    pdf = pd.DataFrame(pdf)
+    pdf['label'] = label
+    pdf['qid'] = qid
+    return pdf
+
+norm_data_pdf = get_normalized_data(data_pdf)
+summery(norm_data_pdf)
+```
+
+## PCA
+
+```{python}
+def get_reduced_feature(pdf, n_components=N_COMPONENTS):
+    pca = PCA(n_components=n_components)
+    qid = pdf[['qid']]
+    label = pdf[['label']]
+    pdf = pdf.drop(['qid', 'label'], axis = 1)
+    pdf = pca.fit_transform(pdf)
+    pdf = pd.DataFrame(pdf)
+    pdf['label'] = label
+    pdf['qid'] = qid
+    return pdf
+
+reduced_feature_pdf = get_reduced_feature(norm_data_pdf)
+summery(reduced_feature_pdf)
+```
+
+## Calculate Accuracy
+
+```{python}
+def calculate_accuracy(y_pred_pdf, y_test_pdf):
+    pdf = y_pred_pdf.rename({'label':'label_predicted'}, axis=1)
+    pdf['label_true'] = y_test_pdf['label']
+    wrong_predicted_pdf = pdf[pdf['label_true'] != pdf['label_predicted']]
+    return 1 - len(wrong_predicted_pdf) / len(pdf)
+```
+
+# First Part
+
+
+## Models
+
+```{python}
+MODELS = ['CLOSED_FROM', 'DUMMY_MODEL', 'SIMPLE_MODEL', "BEST_MODEL"]
+```
+
+```{python}
+def get_best_scaler(y_train_pred, y_train):
+    best_upper_bound = 2
+    best_lower_bound = 0
+    best_acc = 0
+    for i in [x * 0.01 for x in range(100, 150)]:
+        for j in [yy * 0.01 for yy in range(0, 100)]:
+            y_scaled = [2 if y > i else 1 if y > j else 0 for y in y_train_pred]
+            delta = np.array(y_scaled) - np.array(y_train)
+            zeros = np.count_nonzero(delta==0)
+            acc=zeros/len(delta)
+            if acc > best_acc:
+                best_acc = acc
+                best_upper_bound = i
+                best_lower_bound = j
+    return best_upper_bound, best_lower_bound
+```
+
+### Closed From
+
+```{python}
+def get_colsed_form_prediction(data_pdf, scale):
+    norm_data_pdf = get_normalized_data(data_pdf)
+    reduced_feature_pdf = get_reduced_feature(norm_data_pdf)
+    x_matrix = reduced_feature_pdf.drop(['qid', 'label'], axis=1)
+    x_matrix.insert(0, 'bias', 1)
+    x_matrix = x_matrix.to_numpy()
+    y_matrix = reduced_feature_pdf['label'].to_numpy()
+    x_train, x_test, y_train, y_test = train_test_split(x_matrix, y_matrix, test_size=TEST_SIZE, random_state=RADNOM_STATE)
+    weighted_matrix = np.dot(np.linalg.inv(np.dot(x_train.T, x_train)), np.dot(x_train.T, y_train))
+    
+    y_train_pred = np.dot(x_train, weighted_matrix)
+    y_test_pred = np.dot(x_test, weighted_matrix)
+    y_test_pred_pdf = pd.DataFrame(y_test_pred).rename({0:'label'}, axis=1)
+    y_test_pdf = pd.DataFrame(y_test).rename({0:'label'}, axis=1)
+    
+    if scale:
+        best_x, best_y = get_best_scaler(y_train_pred, y_train)
+        y_categorized = [2 if y > best_x else 1 if y > best_y else 0 for y in y_test_pred]
+        y_test_pred_pdf['label'] = y_categorized
+    
+    return y_test_pred_pdf, y_test_pdf
+```
+
+### Other
+
+```{python}
+def get_dummy_model_prediction(data_pdf):
+    labels_count = [
+        len(data_pdf[data_pdf['label'] == 0]),
+        len(data_pdf[data_pdf['label'] == 1]),
+        len(data_pdf[data_pdf['label'] == 2])
+    ]
+    max_label_count = max(labels_count)
+    most_commen_label = labels_count.index(max_label_count)
+    return most_commen_label
+
+def get_simple_model_prediction(x_train, x_test, y_train, y_test, scale, random_state=RADNOM_STATE):
+    sgd_rgresssion = SGDRegressor(random_state=random_state)
+    sgd_rgresssion.fit(x_train, y_train)
+    y_pred = sgd_rgresssion.predict(x_test)
+    y_pred_pdf = pd.DataFrame(y_pred)
+    y_pred_pdf = y_pred_pdf.rename({0:'label'}, axis=1)
+    if scale:
+        y_train_pred = sgd_rgresssion.predict(x_train)
+        best_x, best_y = get_best_scaler(y_train_pred, pd.DataFrame(y_train)['label'])
+        y_categorized = [2 if y > best_x else 1 if y > best_y else 0 for y in y_pred]
+        y_pred_pdf['label'] = y_categorized
+    y_test_pdf = pd.DataFrame(y_test).reset_index(drop=True)
+    return y_pred_pdf
+
+
+def get_prediction_and_test(data_pdf, model, scale=True,
+                            test_size=TEST_SIZE, random_state=RADNOM_STATE):
+    
+    if model == 'CLOSED_FROM':
+        return get_colsed_form_prediction(data_pdf, scale)
+    
+    if model == 'BEST_MODEL':
+        norm_data_pdf = get_normalized_data(data_pdf)
+        reduced_feature_pdf = get_reduced_feature(norm_data_pdf)
+        x_pdf = reduced_feature_pdf.drop(['qid', 'label'], axis = 1)
+        y_pdf = reduced_feature_pdf['label']
+        x_train, x_test, y_train, y_test = train_test_split(x_pdf , y_pdf, 
+                                                            test_size=test_size, random_state=random_state)
+
+        x_train, y_train = smote.fit_resample(x_train, y_train)
+        sgd_rgresssion = SGDRegressor(random_state=random_state)
+        sgd_rgresssion.fit(x_train, y_train)
+        y_pred = sgd_rgresssion.predict(x_test)
+        y_pred_pdf = pd.DataFrame(y_pred)
+        y_pred_pdf = y_pred_pdf.rename({0:'label'}, axis=1)
+        if scale:
+            y_train_pred = sgd_rgresssion.predict(x_train)
+            best_x, best_y = get_best_scaler(y_train_pred, y_train)
+            y_categorized = [2 if y > best_x else 1 if y > best_y else 0 for y in y_pred]
+            y_pred_pdf['label'] = y_categorized
+        
+        y_test_pdf = pd.DataFrame(y_test).reset_index(drop=True)
+        
+        return y_pred_pdf, y_test_pdf
+    
+    x_pdf = data_pdf.drop(['qid', 'label'], axis = 1)
+    y_pdf = data_pdf[['label']]
+    x_train, x_test, y_train, y_test = train_test_split(x_pdf , y_pdf, 
+                                                        test_size=test_size, random_state=random_state) 
+    
+    if model == 'SIMPLE_MODEL':
+        y_pred_pdf = get_simple_model_prediction(x_train, x_test, y_train, y_test, scale)
+        
+    if model == 'DUMMY_MODEL':
+        most_commen_label = get_dummy_model_prediction(y_train)
+        y_pred = np.empty(len(x_test))
+        y_pred.fill(most_commen_label)
+        y_pred_pdf = pd.DataFrame(y_pred)
+        y_pred_pdf = y_pred_pdf.rename({0:'label'}, axis=1)
+        
+    y_test_pdf = pd.DataFrame(y_test).reset_index(drop=True)
+        
+    return y_pred_pdf, y_test_pdf
+```
+
+## Evaluation
+
+```{python}
+for model in MODELS:
+    y_pred_pdf, y_test_pdf = get_prediction_and_test(data_pdf, model)
+    accuracy = calculate_accuracy(y_pred_pdf, y_test_pdf)
+    print(f"accuracy for {model} = {accuracy}")
+```
+
+<font color='Red'>
+    <div style=style="font-size: 25px"> 
+        Conclusion
+    </div>
+</font>
+
+
+In the first part, we have implemented four different models. First, we used the Closed-form to calculate the optimum weights vector of linear regression. After that, we have three models; the Dummy model, the Simple model, and the Best model. The Dummy model constantly predicts the labels regarding the most frequent train label. The other two models are linear regression models. The Simple model trained on original data, but, Our Best model used data normalizing, feature reduction, and oversampling to achieve better generalization.
+At the evaluation step, for the Dummy and the Simple models, we got the same accuracy as Closed-form. It's because of having a high percentage of 0s in train labels. Besides that, having less accuracy in our Best model compared to the other models doesn't necessarily mean that they are more powerful models to use. On the other hand, our Best model has better generalization due to oversampling and handles less probable data.
+
+
+# Second Part
+
+
+### Prepare DataSet
+
+
+#### Convert Pandas Data Frame to PySpark Data Frame 
+
+```{python}
+CLEAN_DATA_PATH = './reduced_feature_pdf.csv'
+
+def write_pandas_data_frame(pdf, path=CLEAN_DATA_PATH):
+    pdf.to_csv(path, index=False)
+
+def read_clean_data_df(path=CLEAN_DATA_PATH):
+    return spark.read.csv(path, header=True)
+
+
+reduced_feature_pdf = get_reduced_feature(data_pdf)
+    
+write_pandas_data_frame(reduced_feature_pdf)
+clean_data_df = read_clean_data_df()
+clean_data_df.printSchema()
+```
+
+#### Buliding Customized Data Frame
+
+```{python}
+columns = clean_data_df.columns
+columns.remove('qid')
+clean_data_j_df = clean_data_df
+for column in columns:
+    clean_data_j_df = clean_data_j_df.withColumn(column, F.round(F.col(column).cast('float'), 7))
+    clean_data_j_df = clean_data_j_df.withColumnRenamed(column, str(column + "_j"))
+    
+clean_data_i_df = clean_data_df
+for column in columns:
+    clean_data_i_df = clean_data_i_df.withColumn(column, F.round(F.col(column).cast('float'), 7))
+    clean_data_i_df = clean_data_i_df.withColumnRenamed(column, str(column + "_i"))    
+```
+
+#### Convert PySpark Data Frame to Pandas Data Frame
+
+```{python}
+part_two_data_pdf = (
+    clean_data_i_df
+    .join(clean_data_j_df.drop('index'), on='qid')
+    .filter(F.col('label_i') != F.col('label_j'))
+    .withColumn('label', F.when(F.col('label_i') > F.col('label_j'), F.lit(1)).otherwise(F.lit(0)))
+    .drop('label_i', 'label_j', 'qid')
+    .toPandas()
+)
+summery(part_two_data_pdf)
+```
+
+## Model
+
+```{python}
+def get_logestic_regression_prediction(part_two_data_pdf):
+    logistic_x_data = part_two_data_pdf.drop('label', axis=1)
+    logistic_y_data = part_two_data_pdf[['label']]
+
+    logistic_x_train, logistic_x_test, logistic_y_train, logistic_y_test = train_test_split(logistic_x_data , logistic_y_data, test_size=0.20, random_state=42)
+
+
+    sgd_rgresssion = LogisticRegression(random_state=42)
+    sgd_rgresssion.fit(logistic_x_train, logistic_y_train)
+    y_pred = sgd_rgresssion.predict(logistic_x_test)
+    y_pred_pdf = pd.DataFrame(y_pred)
+    y_pred_pdf = y_pred_pdf.rename(columns = {0:'label'})
+
+    logistic_y_test_pdf = pd.DataFrame(logistic_y_test).reset_index(drop=True)
+
+    return y_pred_pdf, logistic_y_test_pdf
+```
+
+## Evaluation
+
+```{python}
+logistic_y_pred_pdf, logistic_y_test_pdf = get_logestic_regression_prediction(part_two_data_pdf)
+print(f"accuracy for Logestic Regression Model = {calculate_accuracy(logistic_y_pred_pdf, logistic_y_test_pdf)}")
+```
