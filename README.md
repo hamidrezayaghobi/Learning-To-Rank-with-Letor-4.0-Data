@@ -31,12 +31,12 @@ At the evaluation step, for the Dummy and the Simple models, we got the same acc
 ## 2-Pair-Wise:
 
 ### 2-1 Model
-1. **Logestic Regression**
+1. **Logistic Regression**
 
 ### 2-2 Results:
 | Model | Accuracy |
 |  :--------:  | :------: |
-|  CLOSED_FROM | 0.7562   |
+|  LOGISTIC_REGRESSION | 0.7077   |
 
 ## 3 Conclusion:
 Pairwise approaches work better in practice than pointwise approaches because predicting relative order is closer to the nature of ranking than predicting class label or relevance score.
