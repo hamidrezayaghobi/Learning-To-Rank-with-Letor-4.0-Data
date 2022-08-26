@@ -10,10 +10,10 @@
 
 ## 1-Point-Wise:
 ### 1. Models
-        1. **Closed-Form**: calculate the optimum weights vector of linear regression.
-        2. **Dummy Model**: constantly predicts the labels regarding the most frequent train label.
-        3. **Simple Model**: trained on original data using Stochastic Gradient Descent
-        4. **Best Model**: used data normalizing, feature reduction, and oversampling for training using Stochastic Gradient Descent to achieve better generalization
+1. **Closed-Form**: calculate the optimum weights vector of linear regression.
+2. **Dummy Model**: constantly predicts the labels regarding the most frequent train label.
+3. **Simple Model**: trained on original data using Stochastic Gradient Descent
+4. **Best Model**: used data normalizing, feature reduction, and oversampling for training using Stochastic Gradient Descent to achieve better generalization
 ### 2. Results:
 
 | Model | Accuracy |
