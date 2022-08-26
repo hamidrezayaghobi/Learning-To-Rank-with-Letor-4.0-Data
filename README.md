@@ -1,7 +1,7 @@
-# Learning To Rank LTR models for [Lerto 4.0](https://www.microsoft.com/en-us/research/project/letor-learning-rank-information-retrieval/letor-4-0/) Dataset (MQ2007).
+# Learning To Rank LTR models for [Letor 4.0](https://www.microsoft.com/en-us/research/project/letor-learning-rank-information-retrieval/letor-4-0/) Dataset (MQ2007).
 
 ## Summery
-
+In this project, we try to use the LTR application for the MQ2007 dataset of letor 4.0 with **Point-Wise** and **Pair-Wise** approaches. In the first step, we prepare the MQ2007 dataset and then implement these two approaches.
 
 ## Data-Preparation:
 1. Normalization: Using sklearn.preprocessing.StandardScaler
@@ -9,13 +9,14 @@
 3. Deal With Class-Imbalance: Using imblearn.over_sampling.SMOTE 
 
 ## 1-Point-Wise:
+
 ### 1-1 Models
-1. **Closed-Form**: calculate the optimum weights vector of linear regression.
+1. **Closed Form**: calculate the optimum weights vector of linear regression.
 2. **Dummy Model**: constantly predicts the labels regarding the most frequent train label.
 3. **Simple Model**: trained on original data using Stochastic Gradient Descent
 4. **Best Model**: used data normalizing, feature reduction, and oversampling for training using Stochastic Gradient Descent to achieve better generalization
-### 1-2 Results:
 
+### 1-2 Results:
 | Model | Accuracy |
 |  :--------:  | :------: |
 |  CLOSED_FROM | 0.7562   |
@@ -28,4 +29,14 @@ At the evaluation step, for the Dummy and the Simple models, we got the same acc
 
 
 ## 2-Pair-Wise:
-    1-1: Training logistic regression model
+
+### 2-1 Model
+1. **Logestic Regression**
+
+### 2-2 Results:
+| Model | Accuracy |
+|  :--------:  | :------: |
+|  CLOSED_FROM | 0.7562   |
+
+## 3 Conclusion:
+Pairwise approaches work better in practice than pointwise approaches because predicting relative order is closer to the nature of ranking than predicting class label or relevance score.
