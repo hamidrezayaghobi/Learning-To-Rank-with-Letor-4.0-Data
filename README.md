@@ -15,6 +15,13 @@
     3. **Simple Model**: trained on original data using Stochastic Gradient Descent
     4. **Best Model**: used data normalizing, feature reduction, and oversampling for training using Stochastic Gradient Descent to achieve better generalization
 2. Results:
+
+| Tables        | Are           | Cool  |
+| ------------- |:-------------:| -----:|
+| col 3 is      | right-aligned | $1600 |
+| col 2 is      | centered      |   $12 |
+| zebra stripes | are neat      |    $1 |
+
 | Model | Accuracy |
 | :--------:   | :------: |
 |  CLOSED_FROM | 0.7562   |
