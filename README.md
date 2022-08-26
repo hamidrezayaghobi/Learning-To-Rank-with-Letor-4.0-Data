@@ -1,5 +1,7 @@
 # Learning To Rank LTR models for Lerto 4.0 Dataset (MQ2007).
 
+## Summery
+
 
 ## Data-Preparation:
 1. Normalization: Using sklearn.preprocessing.StandardScaler
@@ -13,6 +15,15 @@
     3. **Simple Model**: trained on original data using Stochastic Gradient Descent
     4. **Best Model**: used data normalizing, feature reduction, and oversampling for training using Stochastic Gradient Descent to achieve better generalization
 2. Results:
+| Model | Accuracy |
+| :---:   | :---: |
+| CLOSED_FROM | 0.7562   |
+| :---:   | :---: |
+| DUMMY_MODEL | 0.7536   |
+| :---:   | :---: |
+| SIMPLE_MODEL | 0.7566   |
+| :---:   | :---: |
+| BEST_MODEL | 0.5406   |
     - accuracy for CLOSED_FROM = 0.7562
     - accuracy for DUMMY_MODEL = 0.7536
     - accuracy for SIMPLE_MODEL = 0.7566
