@@ -1,6 +1,6 @@
 # Learning To Rank LTR models for [Letor 4.0](https://www.microsoft.com/en-us/research/project/letor-learning-rank-information-retrieval/letor-4-0/) Dataset (MQ2007).
 
-## Summery
+## Summary
 In this project, we try to use the LTR application for the MQ2007 dataset of letor 4.0 with **Point-Wise** and **Pair-Wise** approaches. In the first step, we prepare the MQ2007 dataset and then implement these two approaches.
 
 ## Data-Preparation:
